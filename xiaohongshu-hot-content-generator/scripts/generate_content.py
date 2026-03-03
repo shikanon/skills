@@ -81,15 +81,19 @@ def web_search(query: str, count: int = 5) -> list:
 
 def search_cases():
     """搜索OpenClaw商业化变现相关案例"""
-    print("🔍 正在使用默认案例（暂时跳过联网搜索）...")
-    # 暂时跳过联网搜索，使用默认案例测试生成功能
-    cases = [
-        {
-            "title": "用OpenClaw做AI矩阵号，3个月涨粉10w+，月入2w+",
-            "content": "98年女生用OpenClaw批量做小红书AI工具矩阵号，一共20个账号，每天自动生成内容发布，3个月涨粉10w+，接广告+带货每个月收入2万多，每天只需要花1小时维护就行。",
-            "source": "默认案例"
-        }
-    ]
+    print("🔍 正在搜索OpenClaw商业化变现相关案例...")
+    # 调用封装好的web_search函数
+    cases = web_search("OpenClaw 商业化变现 小红书 矩阵号 成功案例", count=5)
+    
+    if not cases:
+        print("⚠️ 未找到搜索结果，使用默认案例")
+        cases = [
+            {
+                "title": "用OpenClaw做AI矩阵号，3个月涨粉10w+，月入2w+",
+                "content": "98年女生用OpenClaw批量做小红书AI工具矩阵号，一共20个账号，每天自动生成内容发布，3个月涨粉10w+，接广告+带货每个月收入2万多，每天只需要花1小时维护就行。",
+                "source": "默认案例"
+            }
+        ]
     
     # 选择第一个高质量案例
     selected_case = cases[0]
@@ -236,34 +240,22 @@ def main():
         # Step 2: 生成prompt
         prompt_json = generate_prompts(case)
         
-        # 测试输出
-        print("\n✅ 测试成功！生成的内容如下：")
-        print("\n📝 文案：")
-        print(prompt_json["copy"])
-        print("\n🏷️ 标签：")
-        print(" ".join(prompt_json["tags"]))
-        print("\n🖼️ 图片prompt：")
-        for img in prompt_json["images"]:
-            print(f"图片{img['index']}：{img['prompt']}")
+        # Step 3: 生成图片
+        image_paths = generate_images(prompt_json)
         
-        # # Step 3: 生成图片
-        # image_paths = generate_images(prompt_json)
+        # Step 4: 校验图片
+        valid = validate_images(image_paths, prompt_json)
+        if not valid:
+            print("❌ 图片校验不通过，重新生成...")
+            return main()
         
-        # # Step 4: 校验图片
-        # valid = validate_images(image_paths, prompt_json)
-        # if not valid:
-        #     print("❌ 图片校验不通过，重新生成...")
-        #     return main()
+        # Step 5: 发送到飞书
+        send_to_feishu(prompt_json, image_paths)
         
-        # # Step 5: 发送到飞书
-        # send_to_feishu(prompt_json, image_paths)
-        
-        print("\n🎉 小红书内容核心生成逻辑测试完成！")
+        print("\n🎉 小红书热门图文生成完成！")
         
     except Exception as e:
         print(f"❌ 生成失败: {str(e)}")
-        import traceback
-        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
