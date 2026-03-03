@@ -4,76 +4,142 @@ import json
 import sys
 import requests
 from datetime import datetime
+from openai import OpenAI
+
+# 火山引擎ARK配置
+ARK_API_KEY = os.getenv("ARK_API_KEY")
+ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
+LLM_MODEL = "doubao-seed-2-0-pro-260215"
+WEB_SEARCH_MODEL = "doubao-seed-2-0-lite-260215" # 支持联网搜索的模型
+
+# 校验必填环境变量
+if not ARK_API_KEY:
+    raise ValueError("❌ 请先设置环境变量ARK_API_KEY，否则无法调用火山引擎API")
 
 # 工作目录
 WORKSPACE = "/root/.openclaw/workspace"
 OUTPUT_DIR = os.path.join(WORKSPACE, "xiaohongshu_output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+# 初始化ARK客户端
+# 火山引擎ARK官方100%兼容OpenAI SDK接口，这是官方推荐的标准调用方式，稳定性有保障
+client = OpenAI(
+    api_key=ARK_API_KEY,
+    base_url=ARK_BASE_URL
+)
+
+def web_search(query: str, count: int = 5) -> list:
+    """
+    封装火山引擎联网搜索函数
+    :param query: 搜索关键词
+    :param count: 返回结果数量
+    :return: 搜索结果列表，每个元素包含title、content、source
+    """
+    print(f"🔍 正在搜索：{query}")
+    try:
+        response = client.chat.completions.create(
+            model=WEB_SEARCH_MODEL,
+            messages=[
+                {"role": "user", "content": f"请搜索以下内容，返回最相关的5条结果：{query}"}
+            ],
+            tools=[{
+                "type": "builtin",
+                "function": {
+                    "name": "web_search",
+                    "parameters": {
+                        "query": query,
+                        "count": count,
+                        "freshness": "pm" # 最近一个月的结果
+                    }
+                }
+            }]
+        )
+        
+        # 解析搜索结果
+        search_results = []
+        content = response.choices[0].message.content
+        if content:
+            # 尝试解析返回的搜索结果
+            try:
+                # 如果是结构化返回
+                results = json.loads(content)
+                if isinstance(results, list):
+                    search_results = results
+            except:
+                # 非结构化返回直接作为内容
+                search_results = [{
+                    "title": "搜索结果",
+                    "content": content,
+                    "source": "联网搜索"
+                }]
+        
+        print(f"✅ 搜索完成，共找到{len(search_results)}条结果")
+        return search_results
+    except Exception as e:
+        print(f"❌ 搜索失败: {str(e)}")
+        return []
+
 def search_cases():
     """搜索OpenClaw商业化变现相关案例"""
-    print("🔍 正在搜索OpenClaw商业化变现案例...")
-    # 这里调用web_search工具，实际使用时通过OpenClaw tool调用
-    # 示例返回案例
+    print("🔍 正在使用默认案例（暂时跳过联网搜索）...")
+    # 暂时跳过联网搜索，使用默认案例测试生成功能
     cases = [
         {
-            "title": "用OpenClaw搭建AI客服，每月被动收入5000+",
-            "content": "95后小伙用OpenClaw给本地商家搭建AI客服系统，每个客户收费199元/月，已经有30个客户，每月被动收入6000左右，投入成本几乎为0，只需要简单配置就能完成。",
-            "source": "知乎"
-        },
-        {
-            "title": "OpenClaw技能定制，副业月入过万",
-            "content": "程序员利用业余时间给客户定制OpenClaw技能，每个技能收费2000-5000元，每月能接3-5单，月收入稳定在1万以上，不需要全职，利用下班时间就能做。",
-            "source": "小红书"
+            "title": "用OpenClaw做AI矩阵号，3个月涨粉10w+，月入2w+",
+            "content": "98年女生用OpenClaw批量做小红书AI工具矩阵号，一共20个账号，每天自动生成内容发布，3个月涨粉10w+，接广告+带货每个月收入2万多，每天只需要花1小时维护就行。",
+            "source": "默认案例"
         }
     ]
-    # 选择第一个案例
+    
+    # 选择第一个高质量案例
     selected_case = cases[0]
     print(f"✅ 选中案例: {selected_case['title']}")
     return selected_case
 
 def generate_prompts(case):
-    """根据案例生成图文prompt"""
-    print("✍️ 正在生成图文prompt...")
-    prompt_json = {
-        "images": [
-            {
-                "index": 1,
-                "prompt": "4K分辨率，3:4比例，清新ins风，桌面摆放着笔记本电脑，屏幕上显示OpenClaw界面，旁边有咖啡和笔记本，文字overlay写着'用OpenClaw做AI客服，月入5000+'，整体明亮温暖",
-                "title": "封面图"
-            },
-            {
-                "index": 2,
-                "prompt": "4K分辨率，3:4比例，简约商务风，数据图表显示每月收入6000元，30个客户，每个客户199元/月，配色明亮，字体清晰",
-                "title": "收入数据"
-            },
-            {
-                "index": 3,
-                "prompt": "4K分辨率，3:4比例，教程风格，3个步骤的图示：1. 配置OpenClaw 2. 对接客户 3. 收款，配色活泼，步骤清晰",
-                "title": "操作步骤"
-            }
-        ],
-        "copy": """谁懂啊！靠OpenClaw做副业第一个月就赚了5000+😭
-
-本来只是抱着试试的心态，用OpenClaw给本地商家做AI客服系统，没想到真的成了！
-
-👉 怎么做的？
-1️⃣ 用OpenClaw自带的技能快速配置客服机器人，支持自动回复、客户管理、工单系统
-2️⃣ 找本地中小商家谈合作，每个客户收199元/月，包维护
-3️⃣ 现在已经有30个客户了，每个月被动收入6000左右，几乎不用怎么管！
-
-成本几乎为0，只需要花点时间配置就行，普通人也能做！
-你们还有什么OpenClaw的变现玩法？评论区一起交流呀👇
-""",
-        "tags": ["#OpenClaw", "#AI变现", "#副业", "#普通人创业", "#被动收入", "#AI工具", "#创业"]
-    }
+    """根据案例调用LLM生成图文prompt，按照知识类小红书Meta Prompt规范"""
+    print("✍️ 正在调用大模型生成图文prompt...")
     
-    # 保存prompt
-    with open(os.path.join(OUTPUT_DIR, "prompt.json"), "w", encoding="utf-8") as f:
-        json.dump(prompt_json, f, ensure_ascii=False, indent=2)
+    # 系统提示词，按照用户提供的Meta Prompt规范
+    system_prompt = """
+你是小红书爆款策划师，严格返回JSON格式，包含三个字段：
+- images: 数组，每个元素有index(序号)、prompt(图片描述，4K 3:4 小红书风格)、title(小标题)，共3张图
+- copy: 小红书文案，口语化，有emoji，开头吸睛，中间分点，结尾引导互动
+- tags: 数组，6-10个标签，相关热门标签
+不要返回任何其他内容，只返回JSON。
+"""
     
-    print("✅ 图文prompt生成完成")
-    return prompt_json
+    user_prompt = f"基于以下案例生成小红书图文内容：\n案例标题：{case['title']}\n案例内容：{case['content']}"
+    
+    try:
+        response = client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.7
+        )
+        
+        content = response.choices[0].message.content.strip()
+        # 移除可能的markdown代码块包裹
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
+        
+        prompt_json = json.loads(content)
+        
+        # 保存prompt
+        with open(os.path.join(OUTPUT_DIR, "prompt.json"), "w", encoding="utf-8") as f:
+            json.dump(prompt_json, f, ensure_ascii=False, indent=2)
+        
+        print("✅ 图文prompt生成完成")
+        return prompt_json
+    except Exception as e:
+        print(f"❌ prompt生成失败: {str(e)}")
+        raise
 
 def generate_images(prompt_json):
     """生成4K图片"""
@@ -81,7 +147,7 @@ def generate_images(prompt_json):
     import shutil
     print("🖼️ 正在生成4K图片...")
     image_paths = []
-    image_gen_script = "/root/.openclaw/workspace/skills/image-generate/scripts/image_generate.py"
+    image_gen_script = "/root/.openclaw/workspace/skills_backup/image-generate/scripts/image_generate.py"
     image_gen_dir = os.path.dirname(image_gen_script)
     
     for img in prompt_json["images"]:
@@ -170,22 +236,34 @@ def main():
         # Step 2: 生成prompt
         prompt_json = generate_prompts(case)
         
-        # Step 3: 生成图片
-        image_paths = generate_images(prompt_json)
+        # 测试输出
+        print("\n✅ 测试成功！生成的内容如下：")
+        print("\n📝 文案：")
+        print(prompt_json["copy"])
+        print("\n🏷️ 标签：")
+        print(" ".join(prompt_json["tags"]))
+        print("\n🖼️ 图片prompt：")
+        for img in prompt_json["images"]:
+            print(f"图片{img['index']}：{img['prompt']}")
         
-        # Step 4: 校验图片
-        valid = validate_images(image_paths, prompt_json)
-        if not valid:
-            print("❌ 图片校验不通过，重新生成...")
-            return main()
+        # # Step 3: 生成图片
+        # image_paths = generate_images(prompt_json)
         
-        # Step 5: 发送到飞书
-        send_to_feishu(prompt_json, image_paths)
+        # # Step 4: 校验图片
+        # valid = validate_images(image_paths, prompt_json)
+        # if not valid:
+        #     print("❌ 图片校验不通过，重新生成...")
+        #     return main()
         
-        print("\n🎉 小红书热门图文生成完成！")
+        # # Step 5: 发送到飞书
+        # send_to_feishu(prompt_json, image_paths)
+        
+        print("\n🎉 小红书内容核心生成逻辑测试完成！")
         
     except Exception as e:
         print(f"❌ 生成失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
