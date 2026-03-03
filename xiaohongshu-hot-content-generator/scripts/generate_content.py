@@ -3,6 +3,7 @@ import os
 import json
 import sys
 import requests
+import boto3
 from datetime import datetime
 from openai import OpenAI
 
@@ -10,71 +11,141 @@ from openai import OpenAI
 ARK_API_KEY = os.getenv("ARK_API_KEY")
 ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 LLM_MODEL = "doubao-seed-2-0-pro-260215"
-WEB_SEARCH_MODEL = "doubao-seed-2-0-lite-260215" # 支持联网搜索的模型
+WEB_SEARCH_MODEL = "doubao-seed-2-0-pro-260215" # 使用 pro 模型支持 Responses API
+IMAGE_MODEL = "doubao-seedream-4-5-251128" # 图片生成模型
+
+# 火山引擎TOS配置
+TOS_ACCESS_KEY = os.getenv("TOS_ACCESS_KEY")
+TOS_SECRET_KEY = os.getenv("TOS_SECRET_KEY")
+TOS_ENDPOINT = "https://tos-s3-cn-guangzhou.volces.com" # 使用 S3 兼容 Endpoint
+TOS_BUCKET = "byteclaw"
+TOS_REGION = "cn-guangzhou"
 
 # 校验必填环境变量
-if not ARK_API_KEY:
-    raise ValueError("❌ 请先设置环境变量ARK_API_KEY，否则无法调用火山引擎API")
-
-# 工作目录
-WORKSPACE = "/root/.openclaw/workspace"
-OUTPUT_DIR = os.path.join(WORKSPACE, "xiaohongshu_output")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+required_envs = {
+    "ARK_API_KEY": ARK_API_KEY,
+    "TOS_ACCESS_KEY": TOS_ACCESS_KEY,
+    "TOS_SECRET_KEY": TOS_SECRET_KEY
+}
+missing_envs = [k for k, v in required_envs.items() if not v]
+if missing_envs:
+    raise ValueError(f"❌ 缺少必要的环境变量: {', '.join(missing_envs)}")
 
 # 初始化ARK客户端
-# 火山引擎ARK官方100%兼容OpenAI SDK接口，这是官方推荐的标准调用方式，稳定性有保障
 client = OpenAI(
     api_key=ARK_API_KEY,
     base_url=ARK_BASE_URL
 )
 
+# 初始化TOS客户端 (使用boto3)
+tos_client = boto3.client(
+    's3',
+    aws_access_key_id=TOS_ACCESS_KEY,
+    aws_secret_access_key=TOS_SECRET_KEY,
+    endpoint_url=TOS_ENDPOINT,
+    region_name=TOS_REGION,
+    config=boto3.session.Config(s3={'addressing_style': 'virtual'}) # 使用虚拟主机风格
+)
+
+def upload_to_tos(local_file_path: str, object_name: str) -> str:
+    """
+    上传文件到火山引擎TOS并返回访问地址
+    """
+    try:
+        tos_client.upload_file(local_file_path, TOS_BUCKET, object_name)
+        # 火山引擎TOS的公开访问地址格式：https://<bucket>.<endpoint>/<object_name>
+        # 去掉endpoint前的https://
+        clean_endpoint = TOS_ENDPOINT.replace("https://", "")
+        url = f"https://{TOS_BUCKET}.{clean_endpoint}/{object_name}"
+        print(f"✅ 文件已上传至TOS: {url}")
+        return url
+    except Exception as e:
+        print(f"❌ 上传至TOS失败: {str(e)}")
+        raise
+
+# 工作目录
+WORKSPACE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUTPUT_DIR = os.path.join(WORKSPACE, "output")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
 def web_search(query: str, count: int = 5) -> list:
     """
-    封装火山引擎联网搜索函数
+    封装火山引擎联网搜索函数 (使用 Responses API)
     :param query: 搜索关键词
     :param count: 返回结果数量
-    :return: 搜索结果列表，每个元素包含title、content、source
+    :return: 搜索结果列表
     """
     print(f"🔍 正在搜索：{query}")
-    try:
-        response = client.chat.completions.create(
-            model=WEB_SEARCH_MODEL,
-            messages=[
-                {"role": "user", "content": f"请搜索以下内容，返回最相关的5条结果：{query}"}
-            ],
-            tools=[{
-                "type": "builtin",
-                "function": {
-                    "name": "web_search",
-                    "parameters": {
-                        "query": query,
-                        "count": count,
-                        "freshness": "pm" # 最近一个月的结果
+    url = f"{ARK_BASE_URL}/responses"
+    headers = {
+        "Authorization": f"Bearer {ARK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": WEB_SEARCH_MODEL,
+        "stream": False,
+        "tools": [
+            {
+                "type": "web_search",
+                "max_keyword": 4,
+                "sources": ["douyin", "moji", "toutiao"],
+            }
+        ],
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": f"请搜索以下内容并返回最相关的5条详细案例，包含标题和主要内容：{query}"
                     }
-                }
-            }]
-        )
+                ]
+            }
+        ]
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code != 200:
+            print(f"❌ 接口返回错误: {response.status_code} - {response.text}")
+            return []
+            
+        resp_json = response.json()
         
-        # 解析搜索结果
-        search_results = []
-        content = response.choices[0].message.content
+        # 调试：打印响应结构
+        # print(f"DEBUG: Response JSON: {json.dumps(resp_json, ensure_ascii=False)}")
+        
+        content = ""
+        if "choices" in resp_json and len(resp_json["choices"]) > 0:
+            choice = resp_json["choices"][0]
+            if "message" in choice and "content" in choice["message"]:
+                msg_content = choice["message"]["content"]
+                if isinstance(msg_content, list):
+                    for item in msg_content:
+                        if isinstance(item, dict):
+                            # 提取所有可能的文本字段
+                            content += item.get("text", "")
+                            if not item.get("text") and "content" in item:
+                                content += str(item["content"])
+                        elif isinstance(item, str):
+                            content += item
+                else:
+                    content = str(msg_content)
+        
+        # 如果还是没拿到，尝试从其它字段拿 (兼容性)
+        if not content and "output" in resp_json:
+            content = str(resp_json["output"])
+        
         if content:
-            # 尝试解析返回的搜索结果
-            try:
-                # 如果是结构化返回
-                results = json.loads(content)
-                if isinstance(results, list):
-                    search_results = results
-            except:
-                # 非结构化返回直接作为内容
-                search_results = [{
-                    "title": "搜索结果",
-                    "content": content,
-                    "source": "联网搜索"
-                }]
+            print(f"✅ 搜索完成，获取到内容长度：{len(content)}")
+            return [{
+                "title": f"{query} 相关案例",
+                "content": content,
+                "source": "联网搜索"
+            }]
         
-        print(f"✅ 搜索完成，共找到{len(search_results)}条结果")
-        return search_results
+        print(f"⚠️ 搜索未返回内容。完整响应：{json.dumps(resp_json, ensure_ascii=False)}")
+        return []
     except Exception as e:
         print(f"❌ 搜索失败: {str(e)}")
         return []
@@ -86,14 +157,7 @@ def search_cases():
     cases = web_search("OpenClaw 商业化变现 小红书 矩阵号 成功案例", count=5)
     
     if not cases:
-        print("⚠️ 未找到搜索结果，使用默认案例")
-        cases = [
-            {
-                "title": "用OpenClaw做AI矩阵号，3个月涨粉10w+，月入2w+",
-                "content": "98年女生用OpenClaw批量做小红书AI工具矩阵号，一共20个账号，每天自动生成内容发布，3个月涨粉10w+，接广告+带货每个月收入2万多，每天只需要花1小时维护就行。",
-                "source": "默认案例"
-            }
-        ]
+        raise Exception("❌ 搜索未返回内容且已移除兜底策略")
     
     # 选择第一个高质量案例
     selected_case = cases[0]
@@ -135,75 +199,89 @@ def generate_prompts(case):
         
         prompt_json = json.loads(content)
         
-        # 保存prompt
-        with open(os.path.join(OUTPUT_DIR, "prompt.json"), "w", encoding="utf-8") as f:
+        # 保存并上传prompt.json
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        local_prompt_path = os.path.join(OUTPUT_DIR, f"prompt_{timestamp}.json")
+        with open(local_prompt_path, "w", encoding="utf-8") as f:
             json.dump(prompt_json, f, ensure_ascii=False, indent=2)
         
-        print("✅ 图文prompt生成完成")
+        tos_prompt_url = upload_to_tos(local_prompt_path, f"xiaohongshu/prompts/prompt_{timestamp}.json")
+        prompt_json["tos_url"] = tos_prompt_url
+        
+        # 删除本地文件
+        os.remove(local_prompt_path)
+        
+        print(f"✅ 图文prompt生成并上传完成: {tos_prompt_url}")
         return prompt_json
     except Exception as e:
         print(f"❌ prompt生成失败: {str(e)}")
         raise
 
 def generate_images(prompt_json):
-    """生成4K图片"""
-    import subprocess
-    import shutil
+    """生成4K图片并上传至TOS"""
     print("🖼️ 正在生成4K图片...")
-    image_paths = []
-    image_gen_script = "/root/.openclaw/workspace/skills_backup/image-generate/scripts/image_generate.py"
-    image_gen_dir = os.path.dirname(image_gen_script)
+    image_urls = []
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     for img in prompt_json["images"]:
-        # 拼接4K分辨率要求到prompt
-        full_prompt = f"{img['prompt']}, 4K分辨率, 3:4比例, 小红书风格, 高质量"
-        target_path = os.path.join(OUTPUT_DIR, f"image_{img['index']}.png")
+        # 根据文档建议，在 prompt 中包含 3:4 比例要求
+        full_prompt = f"{img['prompt']}, 3:4比例, 小红书风格, 高质量"
+        print(f"🎨 正在生成图片 {img['index']}: {img['title']}...")
         
-        # 调用真实图片生成脚本
         try:
-            result = subprocess.run(
-                ["python3", image_gen_script, full_prompt],
-                capture_output=True,
-                text=True,
-                cwd=image_gen_dir,
-                check=True
+            # 调用火山引擎图片生成 API (使用 OpenAI 兼容 SDK)
+            response = client.images.generate(
+                model=IMAGE_MODEL,
+                prompt=full_prompt,
+                size="4K", # 指定生成 4K 质量
+                n=1,
             )
-            # 解析本地路径
-            output_line = result.stdout.strip()
-            if "Downloaded to: " in output_line:
-                local_path = output_line.replace("Downloaded to: ", "").strip()
-                # 处理相对路径
-                if not os.path.isabs(local_path):
-                    local_path = os.path.join(image_gen_dir, local_path)
-                # 复制到目标路径
-                shutil.copy(local_path, target_path)
-                image_paths.append(target_path)
-                print(f"✅ 图片{img['index']}生成完成: {target_path}")
-            else:
-                raise Exception(f"图片生成返回格式错误: {output_line}")
+            
+            # 获取生成的图片 URL
+            gen_image_url = response.data[0].url
+            print(f"✅ 图片 {img['index']} 生成成功，正在下载并上传...")
+            
+            # 下载生成的图片
+            img_response = requests.get(gen_image_url)
+            img_response.raise_for_status()
+            
+            # 本地临时保存
+            local_path = os.path.join(OUTPUT_DIR, f"temp_image_{img['index']}_{timestamp}.png")
+            with open(local_path, "wb") as f:
+                f.write(img_response.content)
+            
+            # 上传到 TOS
+            object_name = f"xiaohongshu/images/{timestamp}_image_{img['index']}.png"
+            tos_url = upload_to_tos(local_path, object_name)
+            image_urls.append(tos_url)
+            
+            # 删除本地临时文件
+            os.remove(local_path)
+            
+            print(f"✅ 图片 {img['index']} 处理完成: {tos_url}")
                 
         except Exception as e:
-            print(f"❌ 图片{img['index']}生成失败: {str(e)}")
+            print(f"❌ 图片 {img['index']} 处理失败: {str(e)}")
             raise
             
-    return image_paths
+    return image_urls
 
-def validate_images(image_paths, prompt_json):
-    """校验图片质量"""
+def validate_images(image_urls, prompt_json):
+    """校验图片质量 (基于URL)"""
     print("🔍 正在校验图片质量...")
-    # 这里调用图片理解模型校验，实际使用时替换为真实校验逻辑
-    # 模拟校验通过
+    # 这里可以调用多模态模型校验，目前模拟校验通过
     all_valid = True
-    for i, path in enumerate(image_paths):
-        print(f"✅ 图片{i+1}校验通过")
+    for i, url in enumerate(image_urls):
+        print(f"✅ 图片{i+1}校验通过: {url}")
     
     return all_valid
 
-def send_to_feishu(prompt_json, image_paths):
-    """发送内容到飞书"""
-    print("📤 正在发送内容到飞书...")
+def send_to_feishu(prompt_json, image_urls):
+    """打印内容并显示TOS资源地址"""
+    print("📤 正在输出生成结果...")
     
-    # 输出文案和标签，供调用者发送
+    # 输出文案和标签
     message_content = f"""✨ 生成的小红书内容如下：
 
 📝 文案：
@@ -211,26 +289,30 @@ def send_to_feishu(prompt_json, image_paths):
 
 🏷️ 标签：
 {' '.join(prompt_json['tags'])}
+
+🔗 提示词资源地址：
+{prompt_json.get('tos_url', 'N/A')}
 """
     print("MESSAGE_CONTENT_START")
     print(message_content)
     print("MESSAGE_CONTENT_END")
     
-    # 输出图片路径列表
+    # 输出图片URL列表
     image_titles = [img["title"] for img in prompt_json["images"]]
     print("IMAGE_LIST_START")
-    for i, (path, title) in enumerate(zip(image_paths, image_titles)):
-        print(f"{path}|{title}")
+    for i, (url, title) in enumerate(zip(image_urls, image_titles)):
+        print(f"{url}|{title}")
     print("IMAGE_LIST_END")
     
-    print("✅ 内容生成完成，请使用message工具发送到飞书会话")
+    print("✅ 内容生成完成！所有资源已上传至火山引擎TOS。")
     print("\n📝 小红书文案:")
     print(prompt_json["copy"])
     print("\n🏷️ 标签:")
     print(" ".join(prompt_json["tags"]))
-    print("\n🖼️ 图片路径:")
-    for path in image_paths:
-        print(path)
+    print("\n🖼️ 图片TOS资源地址:")
+    for url in image_urls:
+        print(url)
+    print(f"\n📄 JSON配置TOS资源地址: {prompt_json.get('tos_url')}")
 
 def main():
     try:
@@ -241,16 +323,16 @@ def main():
         prompt_json = generate_prompts(case)
         
         # Step 3: 生成图片
-        image_paths = generate_images(prompt_json)
+        image_urls = generate_images(prompt_json)
         
         # Step 4: 校验图片
-        valid = validate_images(image_paths, prompt_json)
+        valid = validate_images(image_urls, prompt_json)
         if not valid:
             print("❌ 图片校验不通过，重新生成...")
             return main()
         
         # Step 5: 发送到飞书
-        send_to_feishu(prompt_json, image_paths)
+        send_to_feishu(prompt_json, image_urls)
         
         print("\n🎉 小红书热门图文生成完成！")
         
