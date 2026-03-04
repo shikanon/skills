@@ -107,7 +107,7 @@ def web_search(query: str, count: int = 5) -> list:
                 "content": [
                     {
                         "type": "input_text",
-                        "text": f"请搜索以下内容并返回最相关的5条信息：{query}"
+                        "text": f"请搜索最新热点，按热度和相关性排序：{query}"
                     }
                 ]
             }
@@ -161,7 +161,7 @@ def search_cases():
     """搜索OpenClaw商业化变现相关案例"""
     print("🔍 正在搜索OpenClaw商业化变现相关案例...")
     # 调用封装好的web_search函数
-    cases = web_search("OpenClaw 商业化变现 小红书 矩阵号 成功案例", count=5)
+    cases = web_search("OpenClaw 商业化 案例", count=5)
     
     if not cases:
         raise Exception("❌ 搜索未返回内容且已移除兜底策略")
