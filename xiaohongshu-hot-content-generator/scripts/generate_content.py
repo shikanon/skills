@@ -7,6 +7,16 @@ import boto3
 from datetime import datetime
 from openai import OpenAI
 
+# 从 .env 文件加载环境变量
+env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+if os.path.exists(env_file):
+    with open(env_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                os.environ[key.strip()] = value.strip()
+
 # 火山引擎ARK配置
 ARK_API_KEY = os.getenv("ARK_API_KEY")
 ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
@@ -97,7 +107,7 @@ def web_search(query: str, count: int = 5) -> list:
                 "content": [
                     {
                         "type": "input_text",
-                        "text": f"请搜索以下内容并返回最相关的5条详细案例，包含标题和主要内容：{query}"
+                        "text": f"请搜索以下内容并返回最相关的5条信息：{query}"
                     }
                 ]
             }
@@ -111,9 +121,6 @@ def web_search(query: str, count: int = 5) -> list:
             return []
             
         resp_json = response.json()
-        
-        # 调试：打印响应结构
-        # print(f"DEBUG: Response JSON: {json.dumps(resp_json, ensure_ascii=False)}")
         
         content = ""
         if "choices" in resp_json and len(resp_json["choices"]) > 0:
@@ -171,7 +178,13 @@ def generate_prompts(case):
     # 系统提示词，按照用户提供的Meta Prompt规范
     system_prompt = """
 你是小红书爆款策划师，严格返回JSON格式，包含三个字段：
-- images: 数组，每个元素有index(序号)、prompt(图片描述，4K 3:4 小红书风格)、title(小标题)，共3张图
+- images: 数组，每个元素有index(序号)、prompt(图片描述)、title(小标题)，共3张图。
+  第一张为封面图：视觉冲击力强
+  第二、三张为海报信息图，设计要求：
+  1. 标题吸睛：主标题15字内，带情绪感/干货感/热点感（emoji≤2），副标题8-12字突出核心价值（如"新手必看""3步搞定""干货收藏"）
+  2. 结构适配竖版海报：分2-4个核心模块，每模块有5-8字加粗感小标题，拒绝大段文字
+  3. 内容极简：每模块3-4条内容，全用短句（10字内）、关键词、阿拉伯数字，不用长句和复杂描述
+  4. 视觉适配：自带海报作图逻辑，模块清晰、错落有致，对应"标题区-核心内容区-结尾引导区"
 - copy: 小红书文案，口语化，有emoji，开头吸睛，中间分点，结尾引导互动
 - tags: 数组，6-10个标签，相关热门标签
 不要返回任何其他内容，只返回JSON。
@@ -225,8 +238,11 @@ def generate_images(prompt_json):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     for img in prompt_json["images"]:
-        # 根据文档建议，在 prompt 中包含 3:4 比例要求
-        full_prompt = f"{img['prompt']}, 3:4比例, 小红书风格, 高质量"
+        # 根据图片类型添加不同的prompt后缀
+        if img["index"] == 1:
+            full_prompt = f"{img['prompt']}, 3:4比例, 小红书封面风格, 视觉冲击力强, 高质量"
+        else:
+            full_prompt = f"{img['prompt']}, 3:4比例, 小红书海报信息图风格, 清晰展示内容要点, 高质量"
         print(f"🎨 正在生成图片 {img['index']}: {img['title']}...")
         
         try:
@@ -234,7 +250,7 @@ def generate_images(prompt_json):
             response = client.images.generate(
                 model=IMAGE_MODEL,
                 prompt=full_prompt,
-                size="4K", # 指定生成 4K 质量
+                size="4K",
                 n=1,
             )
             
@@ -262,8 +278,7 @@ def generate_images(prompt_json):
             print(f"✅ 图片 {img['index']} 处理完成: {tos_url}")
                 
         except Exception as e:
-            print(f"❌ 图片 {img['index']} 处理失败: {str(e)}")
-            raise
+            print(f"⚠️ 图片 {img['index']} 处理失败，跳过继续: {str(e)}")
             
     return image_urls
 
