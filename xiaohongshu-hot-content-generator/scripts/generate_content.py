@@ -256,7 +256,7 @@ def generate_images(prompt_json):
             
             # 获取生成的图片 URL
             gen_image_url = response.data[0].url
-            print(f"✅ 图片 {img['index']} 生成成功，正在下载并上传...")
+            print(f"✅ 图片{img['index']} （{igen_image_url}） 生成成功，正在下载并上传...")
             
             # 下载生成的图片
             img_response = requests.get(gen_image_url)
@@ -297,6 +297,9 @@ def send_to_feishu(prompt_json, image_urls):
     print("📤 正在输出生成结果...")
     
     # 输出文案和标签
+    prompt_url = prompt_json.get('tos_url')
+    prompt_url_display = prompt_url if prompt_url else "目前未成功上传到对象存储"
+    
     message_content = f"""✨ 生成的小红书内容如下：
 
 📝 文案：
@@ -306,7 +309,7 @@ def send_to_feishu(prompt_json, image_urls):
 {' '.join(prompt_json['tags'])}
 
 🔗 提示词资源地址：
-{prompt_json.get('tos_url', 'N/A')}
+{prompt_url_display}
 """
     print("MESSAGE_CONTENT_START")
     print(message_content)
@@ -327,7 +330,9 @@ def send_to_feishu(prompt_json, image_urls):
     print("\n🖼️ 图片TOS资源地址:")
     for url in image_urls:
         print(url)
-    print(f"\n📄 JSON配置TOS资源地址: {prompt_json.get('tos_url')}")
+    prompt_url_final = prompt_json.get('tos_url')
+    prompt_url_final_display = prompt_url_final if prompt_url_final else "目前未成功上传到对象存储"
+    print(f"\n📄 JSON配置TOS资源地址: {prompt_url_final_display}")
 
 def main():
     try:
