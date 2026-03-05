@@ -2,11 +2,11 @@
 
 自动生成小红书热门图文内容的工具。
 
-## 子模块
+## 依赖
 
-本项目使用 [Agent-Reach](https://github.com/Panniantong/Agent-Reach) 作为 git 子模块，提供多平台内容访问和发布能力。
+本项目依赖 [Agent-Reach](https://github.com/Panniantong/Agent-Reach) 提供多平台内容访问和发布能力。Agent-Reach 作为 git 子模块位于项目根目录 `../Agent-Reach/`。
 
-克隆项目时请使用：
+克隆父仓库时请使用：
 ```bash
 git clone --recursive <repo-url>
 ```
