@@ -77,9 +77,9 @@ def generate_prompts(case):
     
     严格返回JSON格式：
     {"images": [
-      {"index": 1, "prompt": "封面图详细提示词", "title": "图片小标题"},
-      {"index": 2, "prompt": "海报1详细提示词", "title": "图片小标题"},
-      {"index": 3, "prompt": "海报2详细提示词", "title": "图片小标题"}
+      {"index": 1, "prompt": "封面图详细提示词(不包含“小红书”字样、Logo)", "title": "图片标题"},
+      {"index": 2, "prompt": "海报1详细提示词(不包含“小红书”字样、Logo)", "title": "图片标题"},
+      {"index": 3, "prompt": "海报2详细提示词(不包含“小红书”字样、Logo)", "title": "图片标题"}
     ]}
     """
     image_user_prompt = f"选定标题：{content_data['title']}\n文案内容：{content_data['copy']}"
