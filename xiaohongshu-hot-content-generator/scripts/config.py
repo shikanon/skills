@@ -24,6 +24,7 @@ TOS_ENDPOINT = "https://tos-s3-cn-guangzhou.volces.com"
 TOS_BUCKET = "byteclaw"
 TOS_REGION = "cn-guangzhou"
 
+XIAOHONGSHU_SKILLS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills", "xiaohongshu-skills")
 XIAOHONGSHU_COOKIES = os.getenv("XIAOHONGSHU_COOKIES")
 
 required_envs = {

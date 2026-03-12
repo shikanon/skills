@@ -5,19 +5,14 @@ from search import search_cases
 from prompts import generate_prompts
 from image_generator import generate_images, validate_images
 from output import send_to_feishu
-from xiaohongshu_publisher import publish_note, setup_guide
+from xiaohongshu_publisher import publish_note
 
 
 def main():
     parser = argparse.ArgumentParser(description="小红书热门内容生成器")
     parser.add_argument("--publish", action="store_true", help="生成内容后自动发布到小红书")
-    parser.add_argument("--setup-guide", action="store_true", help="显示小红书发布功能配置指南")
     parser.add_argument("--topic", type=str, help="指定生成内容的主题，默认搜索OpenClaw商业化变现")
     args = parser.parse_args()
-
-    if args.setup_guide:
-        setup_guide()
-        return
 
     try:
         case = search_cases(args.topic)

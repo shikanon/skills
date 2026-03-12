@@ -42,6 +42,9 @@ pull_latest_code() {
         fi
         
         git pull
+        echo "🔄 更新子模块..."
+        git submodule update --init --recursive
+        echo "✅ 子模块已更新"
         echo "✅ 代码已更新到最新版本"
     else
         echo "⚠️  非 Git 仓库，跳过代码拉取"

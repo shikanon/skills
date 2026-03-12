@@ -13,10 +13,10 @@ def generate_images(prompt_json):
     
     for img in prompt_json["images"]:
         if img["index"] == 1:
-            full_prompt = f"{img['prompt']}, 3:4比例, 小红书封面风格, 视觉冲击力强, 高质量"
+            full_prompt = f"{img['prompt']}"
         else:
-            full_prompt = f"{img['prompt']}, 3:4比例, 小红书海报信息图风格, 清晰展示内容要点, 高质量"
-        print(f"🎨 正在生成图片 {img['index']}: {img['title']}...")
+            full_prompt = f"{img['prompt']}"
+        print(f"🎨 正在生成图片 {img['index']}: {img['title']}\n{img['prompt']}...")
         
         try:
             response = client.images.generate(

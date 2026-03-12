@@ -110,11 +110,12 @@ class VolcEngineAI:
         :param model: 模型 ID
         :return: 模型响应结果
         """
-        # 记录详细的调试日志
         debug_params = {k: v for k, v in locals().items() if k != 'self'}
-        logger.debug(f"chat 方法详细输入参数: {json.dumps(debug_params, ensure_ascii=False)}")
+        logger.debug(f"🤖 [chat] 输入 - model: {model}")
+        logger.debug(f"🤖 [chat] 输入 - prompt: {prompt}")
+        if image_urls:
+            logger.debug(f"🤖 [chat] 输入 - image_urls: {image_urls}")
         
-        logger.info(f"调用 chat 方法, model: {model}, prompt: {prompt[:50]}...")
         content = []
         if image_urls:
             if isinstance(image_urls, str):
@@ -130,18 +131,17 @@ class VolcEngineAI:
                 input=[{"role": "user", "content": content}]
             )
             
-            # 优雅地提取文本内容
             for item in response.output:
                 if item.type == "message":
                     for content_item in item.content:
                         if content_item.type == "output_text":
-                            logger.info("chat 方法调用成功。")
-                            return content_item.text
-            logger.info("chat 方法返回非标准响应内容。")
+                            result = content_item.text
+                            logger.debug(f"🤖 [chat] 输出 - response: {result}")
+                            return result
+            logger.warning(f"🤖 [chat] 返回非标准响应内容: {response}")
             return str(response)
         except Exception as e:
-            params = {"prompt": prompt, "image_urls": image_urls, "model": model}
-            logger.error(f"chat 方法调用失败: {str(e)}, 输入参数: {json.dumps(params, ensure_ascii=False)}")
+            logger.error(f"🤖 [chat] 失败 - error: {str(e)}, input_prompt: {prompt}")
             raise e
 
     def chat_messages(self, messages, model="doubao-seed-1-8-251228"):
@@ -345,11 +345,8 @@ class VolcEngineAI:
         :param size: 图片尺寸
         :return: 生成的图片链接
         """
-        # 记录详细的调试日志
-        debug_params = {k: v for k, v in locals().items() if k != 'self'}
-        logger.debug(f"text_to_image 方法详细输入参数: {json.dumps(debug_params, ensure_ascii=False)}")
-        
-        logger.info(f"调用 text_to_image 方法, model: {model}, prompt: {prompt[:50]}...")
+        logger.debug(f"🎨 [text_to_image] 输入 - model: {model}, size: {size}")
+        logger.debug(f"🎨 [text_to_image] 输入 - prompt: {prompt}")
 
         try:
             response = self.client.images.generate(
@@ -360,11 +357,10 @@ class VolcEngineAI:
                 watermark=False
             )
             url = response.data[0].url
-            logger.info(f"text_to_image 成功，生成链接: {url}")
+            logger.debug(f"🎨 [text_to_image] 输出 - url: {url}")
             return url
         except Exception as e:
-            params = {"prompt": prompt, "model": model, "size": size}
-            logger.error(f"text_to_image 调用失败: {str(e)}, 输入参数: {json.dumps(params, ensure_ascii=False)}")
+            logger.error(f"🎨 [text_to_image] 失败 - error: {str(e)}, input_prompt: {prompt}")
             raise
 
     @llm_retry()
@@ -377,30 +373,27 @@ class VolcEngineAI:
         :param size: 图片尺寸
         :return: 生成的图片链接
         """
-        # 记录详细的调试日志
-        debug_params = {k: v for k, v in locals().items() if k != 'self'}
-        logger.debug(f"image_to_image 方法详细输入参数: {json.dumps(debug_params, ensure_ascii=False)}")
+        logger.debug(f"🖼️ [image_to_image] 输入 - model: {model}, size: {size}")
+        logger.debug(f"🖼️ [image_to_image] 输入 - prompt: {prompt}")
+        logger.debug(f"🖼️ [image_to_image] 输入 - image_urls: {image_urls}")
         
-        logger.info(f"调用 image_to_image 方法, model: {model}, prompt: {prompt[:50]}...")
         if isinstance(image_urls, str):
             image_urls = [image_urls]
 
         try:
-            # 尝试直接传递列表给 SDK
             response = self.client.images.generate(
                 model=model,
                 prompt=prompt,
-                image=image_urls, # 传入列表
+                image=image_urls,
                 response_format="url",
                 size=size,
                 watermark=False
             )
             url = response.data[0].url
-            logger.info(f"image_to_image 成功，生成链接: {url}")
+            logger.debug(f"🖼️ [image_to_image] 输出 - url: {url}")
             return url
         except Exception as e:
-            params = {"prompt": prompt, "image_urls": image_urls, "model": model, "size": size}
-            logger.error(f"image_to_image 调用失败: {str(e)}, 输入参数: {json.dumps(params, ensure_ascii=False)}")
+            logger.error(f"🖼️ [image_to_image] 失败 - error: {str(e)}, input_prompt: {prompt}")
             raise
 
     def async_image_to_video(self, prompt, first_frame=None, last_frame=None, 
@@ -464,9 +457,9 @@ class VolcEngineAI:
             raise
 
     @llm_retry()
-    def image_to_video(self, prompt, first_frame=None, last_frame=None, 
-                       model="doubao-seedance-1-5-pro-251215", 
-                       resolution="720p", ratio="adaptive", duration=10, 
+    def image_to_video(self, prompt, first_frame=None, last_frame=None,
+                       model="doubao-seedance-1-5-pro-251215",
+                       resolution="720p", ratio="adaptive", duration=10,
                        callback_url=None, execution_expires_after=3600,
                        task_id_to_track=None):
         """
@@ -483,24 +476,26 @@ class VolcEngineAI:
         :param task_id_to_track: 后端任务系统的任务ID，用于更新进度。
         :return: 生成的视频链接。
         """
-        # 记录详细的调试日志
-        debug_params = {k: v for k, v in locals().items() if k != 'self'}
-        logger.debug(f"image_to_video 方法详细输入参数: {json.dumps(debug_params, ensure_ascii=False)}")
+        logger.debug(f"🎬 [image_to_video] 输入 - model: {model}, resolution: {resolution}, ratio: {ratio}, duration: {duration}")
+        logger.debug(f"🎬 [image_to_video] 输入 - prompt: {prompt}")
+        if first_frame:
+            logger.debug(f"🎬 [image_to_video] 输入 - first_frame: {first_frame}")
+        if last_frame:
+            logger.debug(f"🎬 [image_to_video] 输入 - last_frame: {last_frame}")
         
         logger.info("开始同步生成视频...")
         volc_task_id = self.async_image_to_video(
-            prompt=prompt, 
-            first_frame=first_frame, 
-            last_frame=last_frame, 
-            model=model, 
-            resolution=resolution, 
-            ratio=ratio, 
-            duration=duration, 
-            callback_url=callback_url, 
+            prompt=prompt,
+            first_frame=first_frame,
+            last_frame=last_frame,
+            model=model,
+            resolution=resolution,
+            ratio=ratio,
+            duration=duration,
+            callback_url=callback_url,
             execution_expires_after=execution_expires_after
         )
 
-        # 模拟监听回调的轮询逻辑
         logger.info(f"开始轮询监听任务状态 (Volc Task ID: {volc_task_id})...")
         start_time = time.time()
         input_params = {
@@ -508,21 +503,15 @@ class VolcEngineAI:
             "model": model, "resolution": resolution, "ratio": ratio, "duration": duration
         }
         
-        # 引入 task_manager 以更新进度
-        from core.task_manager import task_manager
-        
         while True:
-            # 检查是否超过本地设置的超时时间
             if time.time() - start_time > execution_expires_after:
-                logger.error(f"任务 {volc_task_id} 在本地轮询时超时。输入参数: {json.dumps(input_params, ensure_ascii=False)}")
+                logger.error(f"🎬 [image_to_video] 失败 - 超时, input: {input_params}")
                 raise Exception(f"Task {volc_task_id} timed out during local polling.")
 
-            # 如果提供了 tracking ID，检查任务是否被中止
             if task_id_to_track:
                 current_task = task_manager.get_task(task_id_to_track)
                 if current_task and current_task['status'] == 'aborted':
                     logger.info(f"后端任务 {task_id_to_track} 已被中止，停止轮询火山任务 {volc_task_id}")
-                    # 可以在这里尝试调用取消火山任务的接口（如果 SDK 支持）
                     raise Exception("Task aborted by user")
 
             result = self.client.content_generation.tasks.get(task_id=volc_task_id)
@@ -530,24 +519,18 @@ class VolcEngineAI:
             
             if status == "succeeded":
                 logger.info(f"任务 {volc_task_id} 成功。")
-                if task_id_to_track:
-                    task_manager.update_progress(task_id_to_track, 100)
                     
-                # 尝试提取视频链接
                 video_url = None
                 
-                # Check content.video_url (Standard)
                 if hasattr(result, "content") and result.content:
                     if hasattr(result.content, "video_url"):
                         video_url = result.content.video_url
                     elif isinstance(result.content, dict) and "video_url" in result.content:
                         video_url = result.content["video_url"]
                 
-                # Check top-level video_url (Possible fallback)
                 if not video_url and hasattr(result, "video_url"):
                     video_url = result.video_url
                     
-                # Check model_dump (Pydantic)
                 if not video_url:
                     try:
                         data_dict = result.model_dump()
@@ -559,26 +542,17 @@ class VolcEngineAI:
                         pass
                 
                 if video_url:
+                    logger.debug(f"🎬 [image_to_video] 输出 - video_url: {video_url}")
                     return video_url
                 else:
-                    logger.warning(f"Task succeeded but video_url not found in standard paths. Result: {result}")
+                    logger.warning(f"🎬 [image_to_video] 成功但未找到 video_url: {result}")
                     return str(result)
                     
             elif status == "failed":
-                logger.error(f"任务 {volc_task_id} 失败: {result.error}, 输入参数: {json.dumps(input_params, ensure_ascii=False)}")
+                logger.error(f"🎬 [image_to_video] 失败 - error: {result.error}, input: {input_params}")
                 raise Exception(f"Video Task {volc_task_id} Failed: {result.error}")
             elif status == "expired":
-                logger.error(f"任务 {volc_task_id} 已过期。输入参数: {json.dumps(input_params, ensure_ascii=False)}")
+                logger.error(f"🎬 [image_to_video] 失败 - 过期, input: {input_params}")
                 raise Exception(f"Video Task {volc_task_id} Expired.")
             else:
-                # 估算进度或保持 Running
-                # 火山 API 可能不返回百分比，这里简单模拟或保持活跃
-                if task_id_to_track:
-                    # 简单的时间估算进度，假设 duration * 2 是大概耗时
-                    elapsed = time.time() - start_time
-                    estimated_total = max(20, duration * 3) 
-                    progress = min(95, int((elapsed / estimated_total) * 100))
-                    task_manager.update_progress(task_id_to_track, progress)
-                    
-                logger.info(f"任务 {volc_task_id} 状态: {status}, 继续等待 5 秒...")
                 time.sleep(5)
