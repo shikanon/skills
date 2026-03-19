@@ -5,7 +5,7 @@ from search import search_cases
 from prompts import generate_prompts
 from image_generator import generate_images, validate_images
 from output import send_to_feishu
-from xiaohongshu_publisher import publish_note
+from xiaohongshu_publisher import publish_note, ensure_chrome_running, inject_cookies, check_login_status
 
 
 def main():
@@ -15,6 +15,20 @@ def main():
     args = parser.parse_args()
 
     try:
+        if args.publish:
+            print("🚀 准备发布模式，初始化环境...")
+            print("1️⃣  确保 Chrome 浏览器正在运行...")
+            ensure_chrome_running()
+            print("2️⃣  注入 cookies...")
+            inject_cookies()
+            print("3️⃣  检查登录状态...")
+            ok, msg = check_login_status()
+            if not ok:
+                print(f"❌ {msg}")
+                print("⚠️  发布功能需要有效 cookies，请检查 .env 配置")
+                return
+            print("✅ 登录检查通过！")
+
         case = search_cases(args.topic)
         prompt_json = generate_prompts(case)
         image_urls = generate_images(prompt_json)
@@ -40,6 +54,8 @@ def main():
 
     except Exception as e:
         print(f"❌ 生成失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 

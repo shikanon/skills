@@ -29,8 +29,14 @@ def search_cases(topic=None):
         valid_feeds = [f for f in feeds if f.get("modelType") == "note" and f.get("displayTitle")]
         
         if not valid_feeds:
-            print("⚠️ 未找到相关笔记")
-            return None
+            print("⚠️ 未找到相关笔记，使用默认主题")
+            return {
+                "title": keyword,
+                "content": f"关于{keyword}的热门话题讨论",
+                "source": "默认主题",
+                "id": "default",
+                "xsec_token": "default"
+            }
             
         # Get details for the top note
         top_note = valid_feeds[0]

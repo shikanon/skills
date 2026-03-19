@@ -3,13 +3,51 @@ import json
 import subprocess
 import os
 import requests
+import time
 from config import XIAOHONGSHU_SKILLS_PATH, OUTPUT_DIR, XIAOHONGSHU_COOKIES
+
+def ensure_chrome_running():
+    """确保 Chrome 浏览器正在运行。"""
+    try:
+        result = subprocess.run(
+            ["python3", "scripts/chrome_launcher.py"],
+            cwd=XIAOHONGSHU_SKILLS_PATH,
+            capture_output=True,
+            text=True,
+            timeout=15
+        )
+        time.sleep(2)
+        return True
+    except Exception as e:
+        print(f"⚠️  启动 Chrome 时出错: {str(e)}")
+        return False
+
+def inject_cookies():
+    """注入 XIAOHONGSHU_COOKIES 到正在运行的 Chrome。"""
+    if not XIAOHONGSHU_COOKIES:
+        print("⚠️  未配置 XIAOHONGSHU_COOKIES")
+        return False
+    try:
+        print("🔑 正在注入 cookies...")
+        result = subprocess.run(
+            ["python3", "scripts/set_cookies.py", "--cookies", XIAOHONGSHU_COOKIES],
+            cwd=XIAOHONGSHU_SKILLS_PATH,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        print("✅ Cookies 注入完成")
+        return True
+    except Exception as e:
+        print(f"❌ 注入 cookies 失败: {str(e)}")
+        return False
 
 def check_login_status():
     """使用 xiaohongshu-skills 检查登录状态。"""
     try:
-        # 确保 cookies 已注入
+        ensure_chrome_running()
         inject_cookies()
+        time.sleep(1)
         
         result = subprocess.run(
             ["python3", "scripts/cli.py", "check-login"],
@@ -19,28 +57,15 @@ def check_login_status():
             timeout=30
         )
         if result.returncode == 0:
-            resp = json.loads(result.stdout)
-            if resp.get("logged_in"):
-                return True, "已登录"
+            try:
+                resp = json.loads(result.stdout)
+                if resp.get("logged_in"):
+                    return True, "已登录"
+            except:
+                pass
         return False, "未登录，请检查 cookies 或运行 login"
     except Exception as e:
         return False, f"检查登录状态失败: {str(e)}"
-
-def inject_cookies():
-    """注入 XIAOHONGSHU_COOKIES 到正在运行的 Chrome。"""
-    if not XIAOHONGSHU_COOKIES:
-        return False
-    try:
-        subprocess.run(
-            ["python3", "scripts/set_cookies.py", "--cookies", XIAOHONGSHU_COOKIES],
-            cwd=XIAOHONGSHU_SKILLS_PATH,
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-        return True
-    except Exception:
-        return False
 
 def download_image(url, local_path):
     try:
